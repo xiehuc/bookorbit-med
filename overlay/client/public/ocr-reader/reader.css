@@ -1,0 +1,19 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+#BookReader {
+  height: 100%;
+}
+.BRtoolbarSectionSearch,
+.BRsearch,
+.BRbooksearch,
+.BRshare,
+.BRinfo {
+  display: none !important;
+}
+.searchHiliteLayer rect {
+  animation: none !important;
+}

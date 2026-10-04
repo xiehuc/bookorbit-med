@@ -1,0 +1,8 @@
+/artifacts/
+/.build.*/
+/build.log
+/build.pid
+/*.tar.gz
+/SHA256SUMS
+**/.DS_Store
+**/._*

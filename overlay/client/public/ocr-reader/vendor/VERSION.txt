@@ -1,0 +1,3 @@
+@internetarchive/bookreader 5.0.0-117
+https://registry.npmjs.org/@internetarchive/bookreader/-/bookreader-5.0.0-117.tgz
+tarball SHA256 d6aaa27f4b30f438f2bb7e1536bc001e65e57864f5f5bd724855188bffaba7b9

@@ -1,0 +1,229 @@
+diff --git a/client/src/components/AppHeader.vue b/client/src/components/AppHeader.vue
+index ad913d0c..60ce8bb1 100644
+--- a/client/src/components/AppHeader.vue
++++ b/client/src/components/AppHeader.vue
+@@ -254,6 +254,14 @@ function closeMobileSearch() {
+   clearSearch()
+ }
+ 
++function openOcrSearch() {
++  const q = globalSearchQuery.value.trim()
++  clearSearch()
++  searchFocused.value = false
++  mobileSearchOpen.value = false
++  void router.push({ name: 'ocr-search', query: q ? { q } : {} })
++}
++
+ function navigateToResult(result: GlobalSearchResult) {
+   clearSearch()
+   mobileSearchOpen.value = false
+@@ -447,6 +455,9 @@ function resultFormatEntries(result: GlobalSearchResult) {
+           </div>
+         </Transition>
+       </div>
++      <Button variant="ghost" size="sm" class="shrink-0 text-xs" data-testid="ocr-search-entry" @click="openOcrSearch">
++        {{ t('ocrSearch.entry') }}
++      </Button>
+     </template>
+ 
+     <!-- Normal state -->
+@@ -573,6 +584,10 @@ function resultFormatEntries(result: GlobalSearchResult) {
+         </Transition>
+       </div>
+ 
++      <Button variant="ghost" size="sm" class="hidden shrink-0 text-xs md:inline-flex" data-testid="ocr-search-entry" @click="openOcrSearch">
++        {{ t('ocrSearch.entry') }}
++      </Button>
++
+       <!-- Right -->
+       <div class="ml-auto flex items-center gap-2">
+         <!-- Mobile: search icon -->
+diff --git a/client/src/components/__tests__/AppHeader.spec.ts b/client/src/components/__tests__/AppHeader.spec.ts
+index ae8ee890..ec63a6c3 100644
+--- a/client/src/components/__tests__/AppHeader.spec.ts
++++ b/client/src/components/__tests__/AppHeader.spec.ts
+@@ -205,6 +205,15 @@ describe('AppHeader global search', () => {
+     expect(mocks.routerPush).not.toHaveBeenCalled()
+   })
+ 
++  it('opens OCR search with the existing query without replacing metadata search', async () => {
++    const wrapper = mountHeader()
++    const input = wrapper.get('input[placeholder="Search all books..."]')
++    await input.setValue('  synthetic passage  ')
++    await wrapper.get('[data-testid="ocr-search-entry"]').trigger('click')
++    expect(mocks.routerPush).toHaveBeenCalledWith({ name: 'ocr-search', query: { q: 'synthetic passage' } })
++    expect(mocks.clearGlobalSearch).toHaveBeenCalledOnce()
++  })
++
+   it('keeps Enter-to-open behavior when a result is selected', async () => {
+     const wrapper = mountHeader()
+     const input = wrapper.get('input[placeholder="Search all books..."]')
+diff --git a/client/src/locales/en.json b/client/src/locales/en.json
+index 55251e42..09d8a87c 100644
+--- a/client/src/locales/en.json
++++ b/client/src/locales/en.json
+@@ -1,4 +1,28 @@
+ {
++  "ocrSearch": {
++    "title": "Search inside documents",
++    "subtitle": "Find OCR text across the libraries you can access, then open the original page.",
++    "entry": "Search OCR text",
++    "label": "Document text",
++    "placeholder": "Search words, phrases or reference numbers",
++    "hint": "Enter 2 to 128 characters. Only documents with an OCR index are searched.",
++    "submit": "Search text",
++    "empty": "No matching passages",
++    "emptyHint": "Try a shorter phrase, or check whether the document has been indexed.",
++    "error": "Could not search document text. Please try again.",
++    "retry": "Try again",
++    "untitled": "Untitled document",
++    "page": "Page {page}",
++    "block": "Block {block}",
++    "open": "Open original page",
++    "noBox": "Page available; this passage has no highlight coordinates.",
++    "previous": "Previous results",
++    "next": "Next results",
++    "range": "Showing passages {start} to {end}",
++    "scope": "Restricted to library #{id}",
++    "allLibraries": "Search all accessible libraries",
++    "readerTitle": "Document evidence"
++  },
+   "common": {
+     "resetSortAria": "Reset sort to default",
+     "save": "Save",
+diff --git a/client/src/router/index.ts b/client/src/router/index.ts
+index b85bab69..449c0919 100644
+--- a/client/src/router/index.ts
++++ b/client/src/router/index.ts
+@@ -193,10 +193,22 @@ const PODCAST_STANDALONE_ROUTES: RouteRecordRaw[] = APP_FEATURES.podcasts
+   : []
+ 
+ export const routes: RouteRecordRaw[] = [
++  {
++    path: '/ocr/read/:fileId',
++    name: 'ocr-reader',
++    component: () => import('@/features/ocr-reader/OcrEvidenceReader.vue'),
++    meta: { title: () => t('ocrSearch.readerTitle') },
++  },
+   {
+     path: '/',
+     component: () => import('@/components/AppLayout.vue'),
+     children: [
++      {
++        path: '/ocr/search',
++        name: 'ocr-search',
++        component: () => import('@/features/ocr/OcrSearchView.vue'),
++        meta: { title: () => t('ocrSearch.title') },
++      },
+       {
+         path: '',
+         name: 'dashboard',
+diff --git a/packages/types/src/index.ts b/packages/types/src/index.ts
+index 3398b3c2..a38df261 100644
+--- a/packages/types/src/index.ts
++++ b/packages/types/src/index.ts
+@@ -32,6 +32,7 @@ export * from "./jump-buckets";
+ export * from "./reader-settings";
+ export * from "./scanner";
+ export * from "./search";
++export * from "./ocr";
+ export * from "./opds";
+ export * from "./kobo";
+ export * from "./koreader";
+diff --git a/server/src/app.module.ts b/server/src/app.module.ts
+index 00555564..105f83c2 100644
+--- a/server/src/app.module.ts
++++ b/server/src/app.module.ts
+@@ -93,6 +93,7 @@ import { BookMoveModule } from './modules/book-move/book-move.module';
+ import { AudiobookModule } from './modules/audiobook/audiobook.module';
+ import { TtsModule } from './modules/tts/tts.module';
+ import { SearchModule } from './modules/search/search.module';
++import { OcrModule } from './modules/ocr/ocr.module';
+ import { WatchDownloadModule } from './modules/watch-download/watch-download.module';
+ import { PodcastModule } from './modules/podcast/podcast.module';
+ 
+@@ -195,6 +196,7 @@ import { PodcastModule } from './modules/podcast/podcast.module';
+     BrowseCountsModule,
+     TtsModule,
+     SearchModule,
++    OcrModule,
+     WatchDownloadModule,
+     PodcastModule,
+   ],
+diff --git a/server/src/common/utils/log-url.utils.test.ts b/server/src/common/utils/log-url.utils.test.ts
+index 86f6c0a1..27d3d21a 100644
+--- a/server/src/common/utils/log-url.utils.test.ts
++++ b/server/src/common/utils/log-url.utils.test.ts
+@@ -21,6 +21,11 @@ describe('redactUrlCredentials', () => {
+     expect(redactUrlCredentials('/stream?Ticket=secret')).toBe('/stream?Ticket=[REDACTED]');
+   });
+ 
++  it('redacts OCR search text including encoded parameter names', () => {
++    expect(redactUrlCredentials('/api/v1/ocr/search?q=private&offset=0')).toBe('/api/v1/ocr/search?q=[REDACTED]&offset=0');
++    expect(redactUrlCredentials('/api/v1/ocr/search?%71=private')).toBe('/api/v1/ocr/search?%71=[REDACTED]');
++  });
++
+   it('leaves valueless and unrelated parameters alone', () => {
+     expect(redactUrlCredentials('/api/v1/books?flag&page=2')).toBe('/api/v1/books?flag&page=2');
+   });
+diff --git a/server/src/common/utils/log-url.utils.ts b/server/src/common/utils/log-url.utils.ts
+index 6f1da2d5..6086fb52 100644
+--- a/server/src/common/utils/log-url.utils.ts
++++ b/server/src/common/utils/log-url.utils.ts
+@@ -1,4 +1,4 @@
+-const SENSITIVE_QUERY_KEYS = new Set(['ticket', 'token', 't']);
++const SENSITIVE_QUERY_KEYS = new Set(['ticket', 'token', 't', 'q']);
+ 
+ /**
+  * Replaces credential-bearing query values before a URL reaches a log line or an error body.
+@@ -16,7 +16,13 @@ export function redactUrlCredentials(url: string): string {
+       const separator = pair.indexOf('=');
+       if (separator === -1) return pair;
+       const key = pair.slice(0, separator);
+-      return SENSITIVE_QUERY_KEYS.has(key.toLowerCase()) ? `${key}=[REDACTED]` : pair;
++      let decodedKey = key;
++      try {
++        decodedKey = decodeURIComponent(key);
++      } catch {
++        /* Keep malformed URL keys unchanged. */
++      }
++      return SENSITIVE_QUERY_KEYS.has(decodedKey.toLowerCase()) ? `${key}=[REDACTED]` : pair;
+     })
+     .join('&');
+   return `${path}?${redacted}`;
+diff --git a/server/src/db/migrations/meta/_journal.json b/server/src/db/migrations/meta/_journal.json
+index 1aa309f7..c6e15ef9 100644
+--- a/server/src/db/migrations/meta/_journal.json
++++ b/server/src/db/migrations/meta/_journal.json
+@@ -694,6 +694,20 @@
+       "when": 1790398181669,
+       "tag": "0098_add_subtitle_search_index",
+       "breakpoints": true
++    },
++    {
++      "idx": 99,
++      "version": "7",
++      "when": 1790431120836,
++      "tag": "0099_ocr-block-index",
++      "breakpoints": true
++    },
++    {
++      "idx": 100,
++      "version": "7",
++      "when": 1790432521979,
++      "tag": "0100_ocr-discovery-state",
++      "breakpoints": true
+     }
+   ]
+-}
++}
+\ No newline at end of file
+diff --git a/server/src/db/schema/index.ts b/server/src/db/schema/index.ts
+index 9d41defa..2128905f 100644
+--- a/server/src/db/schema/index.ts
++++ b/server/src/db/schema/index.ts
+@@ -43,3 +43,4 @@ export * from './user-preferences';
+ export * from './tts';
+ export * from './upload-sessions';
+ export * from './podcasts';
++export * from './ocr';
